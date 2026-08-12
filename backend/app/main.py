@@ -8,17 +8,14 @@ from sqlalchemy import text
 
 from app.core.config import settings
 from app.database import engine, Base
-
-# Импортируем модели, чтобы Base знал о всех таблицах
 from app.models import user, schedule  # noqa: F401
-from app.routers import auth, categories, tasks, dashboard
+from app.routers import auth, categories, tasks, dashboard, task_logs
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 async def wait_for_db(retries: int = 15, delay: float = 3.0):
-    """Ждём пока PostgreSQL готов — актуально в docker-compose."""
     for attempt in range(1, retries + 1):
         try:
             async with engine.connect() as conn:
@@ -44,7 +41,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="SaaS Dashboard API",
-    version="0.1.0",
+    version="0.2.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     lifespan=lifespan,
@@ -62,8 +59,9 @@ app.include_router(auth.router)
 app.include_router(categories.router)
 app.include_router(tasks.router)
 app.include_router(dashboard.router)
+app.include_router(task_logs.router)
 
 
 @app.get("/api/health", tags=["health"])
 async def health_check():
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": "0.2.0"}

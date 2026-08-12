@@ -1,7 +1,7 @@
 from datetime import datetime
+from typing import Optional
 from pydantic import BaseModel, EmailStr, field_validator
 import re
-
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -22,22 +22,22 @@ class UserCreate(BaseModel):
             raise ValueError("Пароль должен быть не менее 8 символов")
         return v
 
-
 class UserRead(BaseModel):
     id: int
     email: str
     username: str
     is_active: bool
+    goal: Optional[str] = None
     created_at: datetime
-
     model_config = {"from_attributes": True}
 
+class UserUpdate(BaseModel):
+    goal: Optional[str] = None
 
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
-
 
 class RefreshRequest(BaseModel):
     refresh_token: str

@@ -1,9 +1,9 @@
 import enum
-from datetime import datetime, time
+from datetime import datetime, time, date
 
 from sqlalchemy import (
-    String, Text, Boolean, DateTime, Time, Integer,
-    ForeignKey, Enum as SAEnum, func, JSON
+    String, Text, Boolean, DateTime, Time, Integer, Date,
+    ForeignKey, Enum as SAEnum, func, JSON, UniqueConstraint
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from typing import List, Optional
@@ -28,10 +28,10 @@ class DayOfWeek(str, enum.Enum):
 
 
 class TimeOfDay(str, enum.Enum):
-    MORNING = "morning"    # 06:00 – 12:00
-    AFTERNOON = "afternoon"  # 12:00 – 18:00
-    EVENING = "evening"    # 18:00 – 23:00
-    NIGHT = "night"        # 23:00 – 06:00
+    MORNING = "morning"
+    AFTERNOON = "afternoon"
+    EVENING = "evening"
+    NIGHT = "night"
 
 
 class TaskStatus(str, enum.Enum):
@@ -59,7 +59,6 @@ class Category(Base):
 
 
 class DaySchedule(Base):
-    """Один день недели внутри категории."""
     __tablename__ = "day_schedules"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -76,7 +75,6 @@ class DaySchedule(Base):
 
 
 class TimeSlot(Base):
-    """Блок времени суток внутри дня: утро/день/вечер/ночь."""
     __tablename__ = "time_slots"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
@@ -103,10 +101,7 @@ class Task(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     scheduled_time: Mapped[Optional[time]] = mapped_column(Time, nullable=True)
     duration_minutes: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
-    status: Mapped[TaskStatus] = mapped_column(
-        SAEnum(TaskStatus), default=TaskStatus.PENDING
-    )
-    is_recurring: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_recurring: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -114,17 +109,52 @@ class Task(Base):
     )
 
     time_slot: Mapped["TimeSlot"] = relationship(back_populates="tasks")
+    logs: Mapped[List["TaskLog"]] = relationship(
+        back_populates="task", cascade="all, delete-orphan"
+    )
+
+
+class TaskLog(Base):
+    """Статус выполнения задачи за конкретную дату.
+    
+    Task = шаблон (что делать и когда повторяется)
+    TaskLog = факт (выполнил ли в этот конкретный день)
+    
+    Уникальность: одна запись на задачу на дату.
+    """
+    __tablename__ = "task_logs"
+    __table_args__ = (
+        UniqueConstraint("task_id", "log_date", name="uq_task_log_date"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    task_id: Mapped[int] = mapped_column(
+        ForeignKey("tasks.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    log_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    status: Mapped[TaskStatus] = mapped_column(
+        SAEnum(TaskStatus), default=TaskStatus.PENDING, nullable=False
+    )
+    note: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    task: Mapped["Task"] = relationship(back_populates="logs")
+    user: Mapped["User"] = relationship()
 
 
 class DashboardSettings(Base):
-    """Настройки dashboard конкретного пользователя — что показывать."""
     __tablename__ = "dashboard_settings"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True
     )
-    # JSON: { "visible_categories": [1,2], "visible_days": ["monday","tuesday"], "visible_time_slots": ["morning","evening"] }
     visible_categories: Mapped[list] = mapped_column(JSON, default=list)
     visible_days: Mapped[list] = mapped_column(JSON, default=list)
     visible_time_slots: Mapped[list] = mapped_column(JSON, default=list)

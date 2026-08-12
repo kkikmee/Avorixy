@@ -1,4 +1,4 @@
-from datetime import datetime, time
+from datetime import datetime, time, date
 from typing import Optional, List
 from pydantic import BaseModel
 
@@ -12,7 +12,7 @@ class TaskCreate(BaseModel):
     description: Optional[str] = None
     scheduled_time: Optional[time] = None
     duration_minutes: Optional[int] = None
-    is_recurring: bool = False
+    is_recurring: bool = True
     sort_order: int = 0
 
 
@@ -21,7 +21,6 @@ class TaskUpdate(BaseModel):
     description: Optional[str] = None
     scheduled_time: Optional[time] = None
     duration_minutes: Optional[int] = None
-    status: Optional[TaskStatus] = None
     is_recurring: Optional[bool] = None
     sort_order: Optional[int] = None
 
@@ -33,13 +32,48 @@ class TaskRead(BaseModel):
     description: Optional[str]
     scheduled_time: Optional[time]
     duration_minutes: Optional[int]
-    status: TaskStatus
     is_recurring: bool
     sort_order: int
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# ── TaskLog ───────────────────────────────────────────────────────────────────
+
+class TaskLogRead(BaseModel):
+    id: int
+    task_id: int
+    user_id: int
+    log_date: date
+    status: TaskStatus
+    note: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TaskLogUpdate(BaseModel):
+    status: Optional[TaskStatus] = None
+    note: Optional[str] = None
+
+
+class DayLogsRead(BaseModel):
+    """Все логи пользователя за один день."""
+    date: str
+    logs: List[TaskLogRead]
+
+
+class DayStatsRead(BaseModel):
+    """Статистика за день."""
+    date: str
+    total: int
+    done: int
+    skipped: int
+    pending: int
+    progress_pct: int
 
 
 # ── TimeSlot ──────────────────────────────────────────────────────────────────

@@ -10,11 +10,30 @@ export interface Task {
   description: string | null
   scheduled_time: string | null
   duration_minutes: number | null
-  status: TaskStatus
   is_recurring: boolean
   sort_order: number
   created_at: string
   updated_at: string
+}
+
+export interface TaskLog {
+  id: number
+  task_id: number
+  user_id: number
+  log_date: string        // "2025-06-04"
+  status: TaskStatus
+  note: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface DayStats {
+  date: string
+  total: number
+  done: number
+  skipped: number
+  pending: number
+  progress_pct: number
 }
 
 export interface TimeSlot {
@@ -52,5 +71,6 @@ export interface User {
   email: string
   username: string
   is_active: boolean
+  goal: string | null
   created_at: string
 }

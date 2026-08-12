@@ -1,12 +1,17 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import api from '@/api/client'
-import type { Category, DashboardSettings, Task } from '@/types'
+import type { Category, DashboardSettings, Task, TaskLog, DayStats } from '@/types'
 
 export const useDashboardStore = defineStore('dashboard', () => {
   const categories = ref<Category[]>([])
   const settings = ref<DashboardSettings | null>(null)
   const loading = ref(false)
+
+  // Логи на текущую открытую дату: Map<task_id, TaskLog>
+  const logsByTaskId = ref<Map<number, TaskLog>>(new Map())
+  const dayStats = ref<DayStats | null>(null)
+  const currentDate = ref<string>('')
 
   async function fetchAll() {
     loading.value = true
@@ -20,6 +25,41 @@ export const useDashboardStore = defineStore('dashboard', () => {
     } finally {
       loading.value = false
     }
+  }
+
+  /** Загружает логи задач за конкретную дату (YYYY-MM-DD) и обновляет статистику. */
+  async function fetchDayLogs(dateStr: string) {
+    currentDate.value = dateStr
+    const [logsRes, statsRes] = await Promise.all([
+      api.get(`/task-logs/day/${dateStr}`),
+      api.get(`/task-logs/stats/${dateStr}`),
+    ])
+    const map = new Map<number, TaskLog>()
+    for (const log of logsRes.data.logs as TaskLog[]) {
+      map.set(log.task_id, log)
+    }
+    logsByTaskId.value = map
+    dayStats.value = statsRes.data
+  }
+
+  /** Тогл статуса задачи за текущую открытую дату (pending ↔ done). */
+  async function toggleTaskLog(taskId: number) {
+    const dateStr = currentDate.value
+    if (!dateStr) return
+    const { data } = await api.post(`/task-logs/toggle/${taskId}/${dateStr}`)
+    logsByTaskId.value.set(taskId, data)
+    // Обновляем статистику локально, чтобы не делать лишний запрос
+    await refreshStats()
+  }
+
+  async function refreshStats() {
+    if (!currentDate.value) return
+    const { data } = await api.get(`/task-logs/stats/${currentDate.value}`)
+    dayStats.value = data
+  }
+
+  function getTaskStatus(taskId: number): string {
+    return logsByTaskId.value.get(taskId)?.status ?? 'pending'
   }
 
   async function createCategory(type: string, title: string) {
@@ -53,11 +93,7 @@ export const useDashboardStore = defineStore('dashboard', () => {
   async function deleteTask(taskId: number, slotId: number) {
     await api.delete(`/tasks/${taskId}`)
     _removeTask(slotId, taskId)
-  }
-
-  async function setTaskStatus(taskId: number, status: string) {
-    const { data } = await api.patch(`/tasks/${taskId}/status?new_status=${status}`)
-    _replaceTask(taskId, data)
+    logsByTaskId.value.delete(taskId)
   }
 
   function _injectTask(slotId: number, task: Task) {
@@ -91,7 +127,9 @@ export const useDashboardStore = defineStore('dashboard', () => {
 
   return {
     categories, settings, loading,
-    fetchAll, createCategory, deleteCategory, updateSettings,
-    createTask, updateTask, deleteTask, setTaskStatus,
+    logsByTaskId, dayStats, currentDate,
+    fetchAll, fetchDayLogs, toggleTaskLog, getTaskStatus, refreshStats,
+    createCategory, deleteCategory, updateSettings,
+    createTask, updateTask, deleteTask,
   }
 })

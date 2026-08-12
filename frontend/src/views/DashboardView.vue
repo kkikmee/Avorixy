@@ -16,10 +16,10 @@
             <div class="days-row">
               <button
                 v-for="d in weekDays"
-                :key="d.key"
+                :key="d.iso"
                 class="day-btn"
-                :class="{ 'day-btn--active': selectedDay === d.key }"
-                @click="selectedDay = d.key"
+                :class="{ 'day-btn--active': selectedDate === d.iso }"
+                @click="selectDate(d.iso)"
               >
                 <span class="day-label">{{ d.short }}</span>
                 <span class="day-num">{{ d.num }}</span>
@@ -59,12 +59,12 @@
               <div v-for="task in slot.tasks" :key="task.id" class="task-item">
                 <button
                   class="task-check"
-                  :class="{ 'task-check--done': task.status === 'done' }"
-                  @click="toggleTask(task)"
+                  :class="{ 'task-check--done': dash.getTaskStatus(task.id) === 'done' }"
+                  @click="dash.toggleTaskLog(task.id)"
                 >
-                  <svg v-if="task.status === 'done'" width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
+                  <svg v-if="dash.getTaskStatus(task.id) === 'done'" width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
                 </button>
-                <span class="task-title" :class="{ 'task-done': task.status === 'done' }">{{ task.title }}</span>
+                <span class="task-title" :class="{ 'task-done': dash.getTaskStatus(task.id) === 'done' }">{{ task.title }}</span>
                 <span v-if="task.scheduled_time" class="task-time">{{ task.scheduled_time.slice(0, 5) }}</span>
               </div>
 
@@ -124,6 +124,12 @@
           <label>Время (необязательно)</label>
           <input v-model="newTaskTime" class="input" type="time" />
         </div>
+        <div class="field">
+          <label class="checkbox-label">
+            <input v-model="newTaskRecurring" type="checkbox" />
+            Повторять каждую неделю в этот день
+          </label>
+        </div>
         <div class="modal-actions">
           <button class="btn-ghost" @click="addTaskSlotId = null">Отмена</button>
           <button class="btn-primary-sm" @click="saveTask">Добавить</button>
@@ -144,8 +150,8 @@ import type { Task } from '@/types'
 const dash = useDashboardStore()
 const categories = computed(() => dash.categories)
 const activeCategoryId = ref<number | null>(null)
-const selectedDay = ref<string>('monday')
 const weekOffset = ref(0)
+const selectedDate = ref<string>('')   // ISO "2025-06-04"
 
 const showAddCategory = ref(false)
 const newCatType = ref('daily_tasks')
@@ -153,41 +159,59 @@ const newCatTitle = ref('')
 const addTaskSlotId = ref<number | null>(null)
 const newTaskTitle = ref('')
 const newTaskTime = ref('')
+const newTaskRecurring = ref(true)
 
-const DAYS = [
-  { key: 'monday',    short: 'Mon', full: 'Monday'    },
-  { key: 'tuesday',   short: 'Tue', full: 'Tuesday'   },
-  { key: 'wednesday', short: 'Wed', full: 'Wednesday' },
-  { key: 'thursday',  short: 'Thu', full: 'Thursday'  },
-  { key: 'friday',    short: 'Fri', full: 'Friday'    },
-  { key: 'saturday',  short: 'Sat', full: 'Saturday'  },
-  { key: 'sunday',    short: 'Sun', full: 'Sunday'    },
-]
+const DAY_KEYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday']
+const DAY_SHORT = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun']
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+
+function toISO(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// Понедельник той недели, что смещена на weekOffset недель от сегодня
+function mondayOfWeek(offset: number): Date {
+  const today = new Date()
+  const dow = today.getDay() === 0 ? 7 : today.getDay() // 1..7, Пн=1
+  const monday = new Date(today)
+  monday.setDate(today.getDate() - (dow - 1) + offset * 7)
+  return monday
+}
 
 const weekDays = computed(() => {
-  const today = new Date()
-  return DAYS.map((d, i) => {
-    const date = new Date(today)
-    const dayIndex = today.getDay() === 0 ? 7 : today.getDay()
-    const diff = (i + 1) - dayIndex + weekOffset.value * 7
-    date.setDate(today.getDate() + diff)
-    return { ...d, num: date.getDate() }
+  const monday = mondayOfWeek(weekOffset.value)
+  return DAY_KEYS.map((key, i) => {
+    const date = new Date(monday)
+    date.setDate(monday.getDate() + i)
+    return { key, short: DAY_SHORT[i], num: date.getDate(), iso: toISO(date), dateObj: date }
   })
 })
 
+const selectedDayKey = computed(() => {
+  const found = weekDays.value.find(d => d.iso === selectedDate.value)
+  return found?.key ?? 'monday'
+})
+
 const currentDayLabel = computed(() => {
-  const d = weekDays.value.find(d => d.key === selectedDay.value)
-  const today = new Date()
-  const months = ['January','February','March','April','May','June','July','August','September','October','November','December']
-  return `${d?.full ?? ''}, ${months[today.getMonth()]} ${d?.num}`
+  const d = weekDays.value.find(d => d.iso === selectedDate.value)
+  if (!d) return ''
+  const fullName = d.key.charAt(0).toUpperCase() + d.key.slice(1)
+  return `${fullName}, ${MONTHS[d.dateObj.getMonth()]} ${d.num}`
 })
 
 function shiftWeek(dir: number) { weekOffset.value += dir }
+
 function goToday() {
   weekOffset.value = 0
-  const today = new Date()
-  const idx = today.getDay() === 0 ? 6 : today.getDay() - 1
-  selectedDay.value = DAYS[idx].key
+  selectDate(toISO(new Date()))
+}
+
+async function selectDate(iso: string) {
+  selectedDate.value = iso
+  await dash.fetchDayLogs(iso)
 }
 
 const activeCategory = computed(() =>
@@ -196,7 +220,7 @@ const activeCategory = computed(() =>
 
 const currentDaySlots = computed(() => {
   if (!activeCategory.value) return []
-  const day = activeCategory.value.day_schedules.find(d => d.day_of_week === selectedDay.value)
+  const day = activeCategory.value.day_schedules.find(d => d.day_of_week === selectedDayKey.value)
   return day?.time_slots ?? []
 })
 
@@ -230,15 +254,11 @@ function getSlotTime(t: string): string {
   return ''
 }
 
-async function toggleTask(task: Task) {
-  const next = task.status === 'done' ? 'pending' : 'done'
-  await dash.setTaskStatus(task.id, next)
-}
-
 function openAddTask(slotId: number) {
   addTaskSlotId.value = slotId
   newTaskTitle.value = ''
   newTaskTime.value = ''
+  newTaskRecurring.value = true
 }
 
 async function saveTask() {
@@ -246,8 +266,11 @@ async function saveTask() {
   await dash.createTask(addTaskSlotId.value, {
     title: newTaskTitle.value.trim(),
     scheduled_time: newTaskTime.value || null,
+    is_recurring: newTaskRecurring.value,
   } as Partial<Task>)
   addTaskSlotId.value = null
+  // Перезагружаем логи дня — у новой задачи появится pending-лог
+  if (selectedDate.value) await dash.fetchDayLogs(selectedDate.value)
 }
 
 async function addCategory() {
@@ -321,6 +344,8 @@ onMounted(async () => {
 .modal-title { font-size: 17px; font-weight: 700; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 12px; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: 0.04em; }
+.checkbox-label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 500; text-transform: none; cursor: pointer; }
+.checkbox-label input { width: 16px; height: 16px; cursor: pointer; }
 .input, .select { padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--r-md); font-size: 13.5px; outline: none; background: var(--bg); font-family: inherit; width: 100%; }
 .input:focus, .select:focus { border-color: var(--primary); }
 .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
